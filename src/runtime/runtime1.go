@@ -88,6 +88,14 @@ func goargs() {
 }
 
 func goenvs_unix() {
+	// When running as c-archive or c-shared on non-glibc systems,
+	// argv may be nil since DT_INIT_ARRAY doesn't pass arguments per ELF spec.
+	if argv == nil || (islibrary || isarchive) {
+		// Initialize envs to empty slice to avoid "getenv before env init"
+		envs = make([]string, 0)
+		return
+	}
+	
 	// TODO(austin): ppc64 in dynamic linking mode doesn't
 	// guarantee env[] will immediately follow argv. Might cause
 	// problems.
