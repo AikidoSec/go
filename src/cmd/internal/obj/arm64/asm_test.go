@@ -11,22 +11,29 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 )
 
-func runAssembler(t *testing.T, srcdata string) []byte {
+func runAssemblerWithFlags(t *testing.T, srcdata string, flags ...string) []byte {
 	dir := t.TempDir()
 	defer os.RemoveAll(dir)
 	srcfile := filepath.Join(dir, "testdata.s")
 	outfile := filepath.Join(dir, "testdata.o")
 	os.WriteFile(srcfile, []byte(srcdata), 0644)
-	cmd := testenv.Command(t, testenv.GoToolPath(t), "tool", "asm", "-S", "-o", outfile, srcfile)
+	args := append([]string{"tool", "asm", "-S"}, flags...)
+	args = append(args, "-o", outfile, srcfile)
+	cmd := testenv.Command(t, testenv.GoToolPath(t), args...)
 	cmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH=arm64")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Errorf("The build failed: %v, output:\n%s", err, out)
 	}
 	return out
+}
+
+func runAssembler(t *testing.T, srcdata string) []byte {
+	return runAssemblerWithFlags(t, srcdata)
 }
 
 func TestSplitImm24uScaled(t *testing.T) {
@@ -254,5 +261,45 @@ func TestPCALIGN(t *testing.T) {
 		if !matched {
 			t.Errorf("The %s testing failed!\ninput: %s\noutput: %s\n", test.name, test.code, out)
 		}
+	}
+}
+
+func TestTLSDESCDynlink(t *testing.T) {
+	testenv.MustHaveGoBuild(t)
+
+	src := "GLOBL runtime·tls_g(SB), 256, $8\n" +
+		"TEXT ·f(SB), $0-0\n" +
+		"\tMOVD\truntime·tls_g(SB), R11\n" +
+		"\tRET\n"
+
+	out := string(runAssemblerWithFlags(t, src, "-dynlink"))
+	if !strings.Contains(out, "t=R_ARM64_TLS_DESC ") {
+		t.Fatalf("expected TLSDESC relocation, got:\n%s", out)
+	}
+	if !strings.Contains(out, "t=R_ARM64_TLS_DESC_CALL ") {
+		t.Fatalf("expected TLSDESC call relocation, got:\n%s", out)
+	}
+	if strings.Contains(out, "t=R_ARM64_TLS_IE ") {
+		t.Fatalf("unexpected TLS IE relocation in dynlink mode:\n%s", out)
+	}
+}
+
+func TestTLSDESCShared(t *testing.T) {
+	testenv.MustHaveGoBuild(t)
+
+	src := "GLOBL runtime·tls_g(SB), 256, $8\n" +
+		"TEXT ·f(SB), $0-0\n" +
+		"\tMOVD\truntime·tls_g(SB), R11\n" +
+		"\tRET\n"
+
+	out := string(runAssemblerWithFlags(t, src, "-shared"))
+	if !strings.Contains(out, "t=R_ARM64_TLS_DESC ") {
+		t.Fatalf("expected TLSDESC relocation, got:\n%s", out)
+	}
+	if !strings.Contains(out, "t=R_ARM64_TLS_DESC_CALL ") {
+		t.Fatalf("expected TLSDESC call relocation, got:\n%s", out)
+	}
+	if strings.Contains(out, "t=R_ARM64_TLS_IE ") {
+		t.Fatalf("unexpected TLS IE relocation in shared mode:\n%s", out)
 	}
 }

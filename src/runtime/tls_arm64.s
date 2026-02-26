@@ -18,12 +18,18 @@ TEXT runtime·load_g(SB),NOSPLIT,$0
 #endif
 #endif
 
+	// TLSDESC resolution may clobber LR and R0.
+	SUB	$16, RSP
+	MOVD	LR, 8(RSP)
+	MOVD	runtime·tls_g(SB), R27
+	MOVD	8(RSP), LR
+	ADD	$16, RSP
+
 	MRS_TPIDR_R0
 #ifdef TLS_darwin
 	// Darwin sometimes returns unaligned pointers
 	AND	$0xfffffffffffffff8, R0
 #endif
-	MOVD	runtime·tls_g(SB), R27
 	MOVD	(R0)(R27), g
 
 nocgo:
@@ -39,12 +45,18 @@ TEXT runtime·save_g(SB),NOSPLIT,$0
 #endif
 #endif
 
+	// TLSDESC resolution may clobber LR and R0.
+	SUB	$16, RSP
+	MOVD	LR, 8(RSP)
+	MOVD	runtime·tls_g(SB), R27
+	MOVD	8(RSP), LR
+	ADD	$16, RSP
+
 	MRS_TPIDR_R0
 #ifdef TLS_darwin
 	// Darwin sometimes returns unaligned pointers
 	AND	$0xfffffffffffffff8, R0
 #endif
-	MOVD	runtime·tls_g(SB), R27
 	MOVD	g, (R0)(R27)
 
 nocgo:

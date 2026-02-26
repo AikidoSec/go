@@ -473,6 +473,10 @@ const (
 	// offset from the thread local base.
 	C_TLS_IE
 
+	// TLS "var" in TLSDESC mode: uses a descriptor and resolver call to
+	// compute the offset from the thread local base.
+	C_TLS_DESC
+
 	C_ROFF // register offset (including register extended)
 
 	C_GOK

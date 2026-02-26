@@ -340,6 +340,8 @@ func (s *LSym) checkFIPSReloc(ctxt *Link, rel Reloc) {
 		objabi.R_ADDRPOWER_PCREL34,
 		objabi.R_ARM64_TLS_LE,
 		objabi.R_ARM64_TLS_IE,
+		objabi.R_ARM64_TLS_DESC,
+		objabi.R_ARM64_TLS_DESC_CALL,
 		objabi.R_ARM64_GOTPCREL,
 		objabi.R_ARM64_GOT,
 		objabi.R_ARM64_PCREL,

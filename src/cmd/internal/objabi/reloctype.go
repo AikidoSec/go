@@ -137,6 +137,14 @@ const (
 	// referenced (thread local) symbol from the GOT.
 	R_ARM64_TLS_IE
 
+	// Relocates an ADRP; ADD instruction sequence to compute the address of a
+	// TLSDESC descriptor for the referenced thread-local symbol.
+	R_ARM64_TLS_DESC
+
+	// Marks the TLSDESC resolver call (BLR) for the referenced thread-local
+	// symbol.
+	R_ARM64_TLS_DESC_CALL
+
 	// R_ARM64_GOTPCREL relocates an adrp, ld64 pair to compute the address of the GOT
 	// slot of the referenced symbol.
 	R_ARM64_GOTPCREL

@@ -36,9 +36,13 @@
 
 // Load g from TLS. (See tls_arm64.s)
 #define load_g \
+	SUB	$16, RSP \
+	MOVD	LR, 8(RSP) \
+	MOVD    runtime·tls_g(SB), R11 \
+	MOVD	8(RSP), LR \
+	ADD	$16, RSP \
 	MRS_TPIDR_R0 \
 	TP_ALIGN \
-	MOVD    runtime·tls_g(SB), R11 \
 	MOVD    (R0)(R11), g
 
 // func runtime·raceread(addr uintptr)

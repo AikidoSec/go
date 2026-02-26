@@ -526,6 +526,47 @@ func TestExportedSymbolsWithDynamicLoad(t *testing.T) {
 	}
 }
 
+// test_add: build a tiny c-shared Go library exporting Add, load it with
+// a C program via dlopen+dlsym, and print the computed result.
+func TestAddWithDynamicLoad(t *testing.T) {
+	if GOOS == "windows" {
+		t.Skipf("Skipping on %s", GOOS)
+	}
+	globalSkip(t)
+	testenv.MustHaveGoBuild(t)
+	testenv.MustHaveCGO(t)
+	testenv.MustHaveBuildMode(t, "c-shared")
+	testenv.MustHaveExec(t)
+
+	t.Parallel()
+
+	const (
+		cmd     = "testpadd"
+		binlib  = "libadd.a"
+		mainC   = "main_add.c"
+		header  = "libadd.h"
+		wantOut = "42"
+	)
+
+	run(t, nil, "go", "build", "-buildmode=c-shared", "-installsuffix", "testcshared", "-o", binlib, "./libadd")
+	defer os.Remove(binlib)
+	defer os.Remove(header)
+
+	if GOOS != "freebsd" {
+		runCC(t, "-o", cmd, mainC, "-ldl")
+	} else {
+		runCC(t, "-o", cmd, mainC)
+	}
+
+	bin := cmdToRun(cmd)
+	defer os.Remove(bin)
+
+	got := strings.TrimSpace(runExe(t, nil, bin, "./"+binlib))
+	if got != wantOut {
+		t.Fatalf("unexpected output: got %q, want %q", got, wantOut)
+	}
+}
+
 // test2: tests libgo2 which does not export any functions.
 func TestUnexportedSymbols(t *testing.T) {
 	if GOOS == "windows" {
