@@ -106,8 +106,8 @@ TEXT runtime·rt0_go(SB),NOSPLIT|TOPFRAME,$0
 	// SP = stack; R0 = argc; R1 = argv
 
 	SUB	$32, RSP
-	MOVW	R0, 8(RSP) // argc
-	MOVD	R1, 16(RSP) // argv
+	MOVW	$0, 8(RSP) // argc
+	MOVD	$0, 16(RSP) // argv
 
 	// This is typically the entry point for Go programs.
 	// Call stack unwinding must not proceed past this frame.
