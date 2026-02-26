@@ -74,6 +74,13 @@ func goargs() {
 	if GOOS == "windows" {
 		return
 	}
+	// When running as c-archive or c-shared on non-glibc systems,
+	// argv may be nil since DT_INIT_ARRAY doesn't pass arguments per ELF spec.
+	if argv == nil || (islibrary || isarchive) {
+		// Initialize argslice to empty slice for consistency
+		argslice = make([]string, 0)
+		return
+	}
 	argslice = make([]string, argc)
 	for i := int32(0); i < argc; i++ {
 		argslice[i] = gostringnocopy(argv_index(argv, i))
