@@ -2237,10 +2237,17 @@ func span6(ctxt *obj.Link, s *obj.LSym, newprog obj.ProgAlloc) {
 	// a different thread, the TLS address may become invalid.
 	if !CanUse1InsnTLS(ctxt) {
 		useTLS := func(p *obj.Prog) bool {
-			// Only need to mark the second instruction, which has
-			// REG_TLS as Index. (It is okay to interrupt and restart
-			// the first instruction.)
-			return p.From.Index == REG_TLS
+			if p.From.Index == REG_TLS {
+				return true
+			}
+			// On amd64 shared builds MOVQ TLS, reg expands to a TLSDESC
+			// resolver call, which can leave a thread-local offset live
+			// in reg before the following load.
+			return ctxt.Arch.Family == sys.AMD64 &&
+				ctxt.Flag_shared &&
+				(p.As == AMOVQ || p.As == AMOVL) &&
+				p.From.Type == obj.TYPE_REG &&
+				p.From.Reg == REG_TLS
 		}
 		obj.MarkUnsafePoints(ctxt, s.Func().Text, newprog, useTLS, nil)
 	}
@@ -5146,22 +5153,36 @@ func (ab *AsmBuf) doasm(ctxt *obj.Link, cursym *obj.LSym, p *obj.Prog) {
 						// Note that this is not generating the same insn as the other cases.
 						//     MOV TLS, R_to
 						// becomes
-						//     movq g@gottpoff(%rip), R_to
-						// which is encoded as
-						//     movq 0(%rip), R_to
-						// and a R_TLS_IE reloc. This all assumes the only tls variable we access
-						// is g, which we can't check here, but will when we assemble the second
-						// instruction.
-						ab.rexflag = Pw | (regrex[p.To.Reg] & Rxr)
+						//     xchgq AX, R_to   // if R_to != AX
+						//     leaq  g@TLSDESC(%rip), AX
+						//     call  *(AX)
+						//     xchgq AX, R_to   // if R_to != AX
+						// This leaves the tlsg offset in R_to, which is then consumed by the
+						// following FS-relative load generated from 0(R_to)(TLS*1).
+						dst := p.To.Reg
+						if dst != REG_AX {
+							ab.Put2(byte(0x48|(regrex[dst]&Rxb)), byte(0x90+reg[dst]))
+						}
 
-						ab.Put2(0x8B, byte(0x05|(reg[p.To.Reg]<<3)))
+						ab.Put3(0x48, 0x8D, 0x05)
 						cursym.AddRel(ctxt, obj.Reloc{
-							Type: objabi.R_TLS_IE,
+							Type: objabi.R_AMD64_TLS_DESC,
 							Off:  int32(p.Pc + int64(ab.Len())),
 							Siz:  4,
 							Add:  -4,
 						})
 						ab.PutInt32(0)
+
+						cursym.AddRel(ctxt, obj.Reloc{
+							Type: objabi.R_AMD64_TLS_DESC_CALL,
+							Off:  int32(p.Pc + int64(ab.Len())),
+							Siz:  2,
+						})
+						ab.Put2(0xFF, 0x10)
+
+						if dst != REG_AX {
+							ab.Put2(byte(0x48|(regrex[dst]&Rxb)), byte(0x90+reg[dst]))
+						}
 
 					case objabi.Hplan9:
 						pp.From = obj.Addr{}

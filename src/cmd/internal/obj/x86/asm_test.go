@@ -11,8 +11,27 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 )
+
+func runAssemblerWithFlags(t *testing.T, srcdata string, flags ...string) []byte {
+	dir := t.TempDir()
+	srcfile := filepath.Join(dir, "test.s")
+	outfile := filepath.Join(dir, "test.o")
+	if err := os.WriteFile(srcfile, []byte(srcdata), 0644); err != nil {
+		t.Fatal(err)
+	}
+	args := append([]string{"tool", "asm", "-S"}, flags...)
+	args = append(args, "-o", outfile, srcfile)
+	cmd := testenv.Command(t, testenv.GoToolPath(t), args...)
+	cmd.Env = append(os.Environ(), "GOARCH=amd64", "GOOS=linux")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("assembler failed: %v\n%s", err, out)
+	}
+	return out
+}
 
 type oclassTest struct {
 	arg  *obj.Addr
@@ -338,5 +357,24 @@ func TestPCALIGN(t *testing.T) {
 		if !matched {
 			t.Errorf("The %s testing failed!\ninput: %s\noutput: %s\n", test.name, test.code, out)
 		}
+	}
+}
+
+func TestTLSDESCShared(t *testing.T) {
+	testenv.MustHaveGoBuild(t)
+
+	src := "TEXT ·f(SB), $0-0\n" +
+		"\tMOVQ\tTLS, R11\n" +
+		"\tRET\n"
+
+	out := string(runAssemblerWithFlags(t, src, "-shared"))
+	if !strings.Contains(out, "t=R_AMD64_TLS_DESC ") {
+		t.Fatalf("expected TLSDESC relocation, got:\n%s", out)
+	}
+	if !strings.Contains(out, "t=R_AMD64_TLS_DESC_CALL ") {
+		t.Fatalf("expected TLSDESC call relocation, got:\n%s", out)
+	}
+	if strings.Contains(out, "t=R_TLS_IE ") {
+		t.Fatalf("unexpected TLS IE relocation in shared mode:\n%s", out)
 	}
 }

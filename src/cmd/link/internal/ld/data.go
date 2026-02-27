@@ -666,7 +666,7 @@ func extreloc(ctxt *Link, ldr *loader.Loader, s loader.Sym, r loader.Reloc) (loa
 	default:
 		return thearch.Extreloc(target, ldr, r, s)
 
-	case objabi.R_TLS_LE, objabi.R_TLS_IE:
+	case objabi.R_TLS_LE, objabi.R_TLS_IE, objabi.R_AMD64_TLS_DESC, objabi.R_AMD64_TLS_DESC_CALL:
 		if target.IsElf() {
 			rs := r.Sym()
 			rr.Xsym = rs

@@ -466,6 +466,18 @@ func elfreloc1(ctxt *ld.Link, out *ld.OutBuf, ldr *loader.Loader, s loader.Sym, 
 		} else {
 			return false
 		}
+	case objabi.R_AMD64_TLS_DESC:
+		if siz == 4 {
+			out.Write64(uint64(elf.R_X86_64_GOTPC32_TLSDESC) | uint64(elfsym)<<32)
+		} else {
+			return false
+		}
+	case objabi.R_AMD64_TLS_DESC_CALL:
+		if siz == 2 {
+			out.Write64(uint64(elf.R_X86_64_TLSDESC_CALL) | uint64(elfsym)<<32)
+		} else {
+			return false
+		}
 	case objabi.R_CALL:
 		if siz == 4 {
 			if ldr.SymType(r.Xsym) == sym.SDYNIMPORT {
@@ -603,7 +615,17 @@ func pereloc1(arch *sys.Arch, out *ld.OutBuf, ldr *loader.Loader, s loader.Sym, 
 	return true
 }
 
-func archreloc(*ld.Target, *loader.Loader, *ld.ArchSyms, loader.Reloc, loader.Sym, int64) (int64, int, bool) {
+func archreloc(target *ld.Target, _ *loader.Loader, _ *ld.ArchSyms, r loader.Reloc, _ loader.Sym, val int64) (int64, int, bool) {
+	switch r.Type() {
+	case objabi.R_AMD64_TLS_DESC:
+		if target.IsExternal() && target.IsElf() {
+			return 0, 1, true
+		}
+	case objabi.R_AMD64_TLS_DESC_CALL:
+		if target.IsExternal() && target.IsElf() {
+			return val, 1, true
+		}
+	}
 	return -1, 0, false
 }
 

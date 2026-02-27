@@ -434,6 +434,14 @@ const (
 	R_DWTXTADDR_U3
 	R_DWTXTADDR_U4
 
+	// R_AMD64_TLS_DESC relocates a LEAQ instruction to compute the address of
+	// a TLSDESC descriptor for the referenced thread-local symbol.
+	R_AMD64_TLS_DESC
+
+	// R_AMD64_TLS_DESC_CALL marks the indirect call through the TLSDESC
+	// descriptor for the referenced thread-local symbol.
+	R_AMD64_TLS_DESC_CALL
+
 	// R_WEAK marks the relocation as a weak reference.
 	// A weak relocation does not make the symbol it refers to reachable,
 	// and is only honored by the linker if the symbol is in some other way
