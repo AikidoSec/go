@@ -19,15 +19,10 @@ jobs:
         include:
           - arch: amd64
             runner: ubuntu-latest
-          # Requires GitHub-hosted Arm runners, or an equivalent runner label in your org.
           - arch: arm64
             runner: ubuntu-24.04-arm
-    container:
-      image: alpine:3.20
-    defaults:
-      run:
-        shell: sh
     env:
+      ALPINE_IMAGE: alpine:3.20
       BOOTSTRAP_GO_VERSION: 1.24.6
       GOOS: linux
       GOARCH: ${{ matrix.arch }}
@@ -36,33 +31,47 @@ jobs:
       DISTPACK_DIR: ${{ github.workspace }}/pkg/distpack
 
     steps:
-      - name: Install build dependencies
-        run: |
-          apk add --no-cache bash build-base ca-certificates linux-headers
-
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Set up bootstrap Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.BOOTSTRAP_GO_VERSION }}
-          cache: false
-
-      - name: Write VERSION metadata
+      - name: Build release archives in Alpine
         run: |
-          if [ -z "$VERSION_TIME" ]; then
-            VERSION_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          fi
+          docker run --rm \
+            --platform "linux/${GOARCH}" \
+            -e BOOTSTRAP_GO_VERSION \
+            -e GOARCH \
+            -e GOOS \
+            -e VERSION_NAME \
+            -e VERSION_TIME \
+            -v "${GITHUB_WORKSPACE}:/work" \
+            -w /work \
+            "${ALPINE_IMAGE}" \
+            sh -euxc '
+              apk add --no-cache bash build-base ca-certificates curl linux-headers
 
-          printf '%s\n' "$VERSION_NAME" "time $VERSION_TIME" > VERSION
+              if [ -z "$VERSION_TIME" ]; then
+                VERSION_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              fi
 
-      - name: Build release archives
-        working-directory: ${{ github.workspace }}/src
-        run: |
-          GOROOT_BOOTSTRAP="$(go env GOROOT)" \
-          GOROOT_FINAL=/usr/local/go \
-          ./make.bash -distpack
+              case "$GOARCH" in
+                amd64) bootstrap_arch=amd64 ;;
+                arm64) bootstrap_arch=arm64 ;;
+                *)
+                  echo "Unsupported GOARCH: $GOARCH" >&2
+                  exit 1
+                  ;;
+              esac
+
+              curl -fsSL "https://go.dev/dl/go${BOOTSTRAP_GO_VERSION}.linux-${bootstrap_arch}.tar.gz" -o /tmp/go-bootstrap.tgz
+              tar -C /tmp -xzf /tmp/go-bootstrap.tgz
+
+              printf "%s\n" "$VERSION_NAME" "time $VERSION_TIME" > /work/VERSION
+
+              cd /work/src
+              GOROOT_BOOTSTRAP=/tmp/go \
+              GOROOT_FINAL=/usr/local/go \
+              ./make.bash -distpack
+            '
 
       - name: Collect binary archive
         id: collect
