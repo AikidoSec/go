@@ -83,7 +83,7 @@ jobs:
             exit 1
           fi
 
-          checksum="$archive.sha256"
+          checksum="${RUNNER_TEMP}/$(basename "$archive").sha256"
           sha256sum "$archive" > "$checksum"
 
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
