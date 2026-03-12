@@ -1,0 +1,138 @@
+name: Release Build
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: alpine-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          # Requires GitHub-hosted Arm runners, or an equivalent runner label in your org.
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    container:
+      image: alpine:3.20
+    defaults:
+      run:
+        shell: sh
+    env:
+      BOOTSTRAP_GO_VERSION: 1.24.6
+      GOOS: linux
+      GOARCH: ${{ matrix.arch }}
+      VERSION_NAME: ${{ github.event_name == 'release' && github.event.release.tag_name || format('devel-{0}', github.sha) }}
+      VERSION_TIME: ${{ github.event.release.published_at || '' }}
+      DISTPACK_DIR: ${{ github.workspace }}/pkg/distpack
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          apk add --no-cache bash build-base ca-certificates linux-headers
+
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up bootstrap Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.BOOTSTRAP_GO_VERSION }}
+          cache: false
+
+      - name: Write VERSION metadata
+        run: |
+          if [ -z "$VERSION_TIME" ]; then
+            VERSION_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          fi
+
+          printf '%s\n' "$VERSION_NAME" "time $VERSION_TIME" > VERSION
+
+      - name: Build release archives
+        working-directory: ${{ github.workspace }}/src
+        run: |
+          GOROOT_BOOTSTRAP="$(go env GOROOT)" \
+          GOROOT_FINAL=/usr/local/go \
+          ./make.bash -distpack
+
+      - name: Collect binary archive
+        id: collect
+        run: |
+          archive="$(find "$DISTPACK_DIR" -maxdepth 1 -type f -name "$VERSION_NAME.linux-$GOARCH.tar.gz" | head -n 1)"
+          if [ -z "$archive" ]; then
+            echo "Expected archive was not generated."
+            ls -la "$DISTPACK_DIR"
+            exit 1
+          fi
+
+          checksum="$archive.sha256"
+          sha256sum "$archive" > "$checksum"
+
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+          echo "checksum=$checksum" >> "$GITHUB_OUTPUT"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.VERSION_NAME }}-alpine-linux-${{ matrix.arch }}
+          path: |
+            ${{ steps.collect.outputs.archive }}
+            ${{ steps.collect.outputs.checksum }}
+          if-no-files-found: error
+
+      - name: Attach assets to GitHub release
+        if: github.event_name == 'release'
+        uses: actions/github-script@v7
+        env:
+          ASSET_PATHS: |
+            ${{ steps.collect.outputs.archive }}
+            ${{ steps.collect.outputs.checksum }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const releaseId = context.payload.release.id;
+            const assets = process.env.ASSET_PATHS.split('\n').map(line => line.trim()).filter(Boolean);
+            const existingAssets = await github.paginate(github.rest.repos.listReleaseAssets, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId,
+            });
+
+            for (const assetPath of assets) {
+              const assetName = path.basename(assetPath);
+              const existing = existingAssets.find(asset => asset.name === assetName);
+
+              if (existing) {
+                await github.rest.repos.deleteReleaseAsset({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  asset_id: existing.id,
+                });
+              }
+
+              const assetData = fs.readFileSync(assetPath);
+              const contentType = assetName.endsWith('.sha256') ? 'text/plain' : 'application/gzip';
+
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: releaseId,
+                name: assetName,
+                data: assetData,
+                headers: {
+                  'content-length': assetData.length,
+                  'content-type': contentType,
+                },
+              });
+            }
